@@ -1,0 +1,1 @@
+"""ETHOL attendance bot package."""

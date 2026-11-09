@@ -1,0 +1,21 @@
+services:
+  ethol-bot:
+    build: .
+    container_name: ethol-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    environment:
+      TZ: Asia/Jakarta
+      DISPLAY: ":99"
+    volumes:
+      - ./data:/data
+    # noVNC. Jangan expose port ini tanpa TLS/firewall; lihat README.
+    ports:
+      - "8080:8080"
+    shm_size: "1gb"
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
