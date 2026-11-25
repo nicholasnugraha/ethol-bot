@@ -40,6 +40,17 @@ class Settings(BaseSettings):
     login_timeout_seconds: int = Field(default=300, ge=60, le=900)
     keep_browser_open: bool = False
 
+    legacy_owner_id: int | None = None
+    public_base_url: str = "https://localhost"
+    gateway_host: str = "0.0.0.0"
+    gateway_port: int = Field(default=8080, ge=1, le=65535)
+    login_max_workers: int = Field(default=3, ge=1, le=32)
+    ethol_max_concurrency: int = Field(default=8, ge=1, le=64)
+    login_worker_image: str = "ethol-login-worker:latest"
+    login_worker_network: str = "ethol-login"
+    login_deployment_id: str = "ethol-bot"
+    login_cookie_secure: bool = True
+
     db_path: str = "/data/app.db"
     browser_profile_dir: str = "/data/browser-profile"
     log_level: str = "INFO"
@@ -58,6 +69,24 @@ class Settings(BaseSettings):
         if not ids:
             raise ValueError("ALLOWED_CHAT_IDS minimal berisi satu chat ID")
         return ids
+
+    @field_validator("public_base_url")
+    @classmethod
+    def validate_public_base_url(cls, value: str) -> str:
+        from urllib.parse import urlsplit
+        parsed = urlsplit(value)
+        if (parsed.scheme != "https" or not parsed.hostname or parsed.username
+                or parsed.password or parsed.query or parsed.fragment
+                or parsed.path not in {"", "/"}):
+            raise ValueError("PUBLIC_BASE_URL must be an HTTPS origin without path or credentials")
+        return value.rstrip("/")
+
+    @field_validator("legacy_owner_id")
+    @classmethod
+    def validate_owner(cls, value: int | None) -> int | None:
+        if value is not None and value <= 0:
+            raise ValueError("LEGACY_OWNER_ID must be a positive Telegram user ID")
+        return value
 
     @field_validator("daily_summary_time")
     @classmethod

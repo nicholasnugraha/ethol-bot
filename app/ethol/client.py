@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Awaitable, Callable
 from typing import Any
@@ -38,9 +39,13 @@ class EtholClient:
         cookies: CookieList | None = None,
         on_cookies_changed: OnCookiesChanged | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        request_semaphore: asyncio.Semaphore | None = None,
     ) -> None:
         self.base_url = base_url.rstrip("/")
         self._on_cookies_changed = on_cookies_changed
+        self._refresh_lock = asyncio.Lock()
+        self._refresh_generation = 0
+        self._request_semaphore = request_semaphore
         self._client = httpx.AsyncClient(
             base_url=self.base_url,
             timeout=httpx.Timeout(20.0, connect=10.0),
@@ -89,10 +94,27 @@ class EtholClient:
     async def close(self) -> None:
         await self._client.aclose()
 
+    async def _send(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
+        if self._request_semaphore is None:
+            return await self._client.request(method, url, **kwargs)
+        async with self._request_semaphore:
+            return await self._client.request(method, url, **kwargs)
+
     async def refresh(self) -> bool:
+        """Serialize token rotation; concurrent callers reuse the completed refresh."""
+        generation = self._refresh_generation
+        async with self._refresh_lock:
+            if generation != self._refresh_generation:
+                return True
+            refreshed = await self._refresh_unlocked()
+            if refreshed:
+                self._refresh_generation += 1
+            return refreshed
+
+    async def _refresh_unlocked(self) -> bool:
         """Rotate the short-lived token using refresh_token cookie."""
         try:
-            response = await self._client.post("/api/auth/refresh")
+            response = await self._send("POST", "/api/auth/refresh")
         except httpx.HTTPError as exc:
             logger.warning("Gagal menghubungi endpoint refresh: %s", exc)
             return False
@@ -110,11 +132,11 @@ class EtholClient:
         return True
 
     async def _request(self, method: str, url: str, **kwargs: Any) -> httpx.Response:
-        response = await self._client.request(method, url, **kwargs)
+        response = await self._send(method, url, **kwargs)
         if response.status_code == 401:
             logger.info("Token kedaluwarsa saat %s %s; mencoba refresh", method, url)
             if await self.refresh():
-                response = await self._client.request(method, url, **kwargs)
+                response = await self._send(method, url, **kwargs)
             if response.status_code == 401:
                 raise SessionExpired("Sesi ETHOL habis dan refresh gagal")
 
@@ -132,9 +154,9 @@ class EtholClient:
         return response
 
     async def validasi_token(self) -> SessionProfile | None:
-        response = await self._client.get("/api/auth/validasi-token")
+        response = await self._send("GET", "/api/auth/validasi-token")
         if response.status_code == 401 and await self.refresh():
-            response = await self._client.get("/api/auth/validasi-token")
+            response = await self._send("GET", "/api/auth/validasi-token")
         if response.status_code != 200:
             return None
         return SessionProfile.from_api(response.json())

@@ -3,5 +3,8 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+.test-tmp-*/
+.pytest-tmp-*/
+.pytest-local/
 .ruff_cache/
 data/

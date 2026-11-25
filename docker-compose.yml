@@ -10,12 +10,23 @@ services:
       DISPLAY: ":99"
     volumes:
       - ./data:/data
-    # noVNC. Jangan expose port ini tanpa TLS/firewall; lihat README.
+      # Docker socket grants host-level control; required only for ephemeral login workers.
+      - /var/run/docker.sock:/var/run/docker.sock
+    # Publish only when a TLS reverse proxy is configured in front of this port.
     ports:
-      - "8080:8080"
+      - "127.0.0.1:8080:8080"
     shm_size: "1gb"
+    networks:
+      ethol-login:
+        aliases:
+          - ethol-bot
     logging:
       driver: json-file
       options:
         max-size: "10m"
         max-file: "3"
+
+networks:
+  ethol-login:
+    name: ethol-login
+    driver: bridge

@@ -178,6 +178,12 @@ class EtholService:
                 return SubmitResult(False, "Sesi presensi sudah ditutup atau berganti")
 
             client = await self.auth.get_client()
+            # A durable, tenant-scoped claim prevents duplicate POSTs after a
+            # restart or from another process. Uncertain outcomes require manual
+            # reconciliation; never automatically repeat a possibly applied POST.
+            claim_key = f"{course.nomor}:{course.jenis_schema}:{fresh.key}"
+            if not await self.db.claim_submission(claim_key):
+                return SubmitResult(False, "Presensi sudah diproses atau hasil sebelumnya belum pasti; periksa riwayat ETHOL")
             try:
                 response = await client.submit_presensi(
                     kuliah=course.nomor,

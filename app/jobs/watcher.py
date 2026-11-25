@@ -23,12 +23,15 @@ class Watcher:
         service: EtholService,
         auth: AuthManager,
         notifier: Notifier,
+        *,
+        recipient_id: int | None = None,
     ) -> None:
         self.settings = settings
         self.db = db
         self.service = service
         self.auth = auth
         self.notifier = notifier
+        self.recipient_id = recipient_id
         self._stop = asyncio.Event()
         self._task: asyncio.Task | None = None
 
@@ -124,9 +127,9 @@ class Watcher:
             item = schedule_map.get(course.nomor) or self._fallback_item(course, now)
             if mode == "auto":
                 result = await self.service.submit(course, session, profile)
-                await self.notifier.attendance_result(course, item, result, auto=True)
+                await self.notifier.attendance_result(course, item, result, auto=True, recipient_id=self.recipient_id)
             else:
-                await self.notifier.session_open(course, item, session)
+                await self.notifier.session_open(course, item, session, recipient_id=self.recipient_id)
 
 
 class SessionKeeper:

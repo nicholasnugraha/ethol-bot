@@ -3,22 +3,14 @@ FROM python:3.12-slim-bookworm
 ENV DEBIAN_FRONTEND=noninteractive \
     PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    DISPLAY=:99 \
     TZ=Asia/Jakarta \
     PLAYWRIGHT_BROWSERS_PATH=/ms-playwright
 
-# noVNC stack + browser runtime libs. `playwright install --with-deps`
-# below also installs Chromium's required packages.
+# Runtime dependencies for the bot. Login browser GUI runs in isolated workers.
 RUN apt-get update && apt-get install -y --no-install-recommends \
     ca-certificates \
     curl \
-    novnc \
-    openbox \
     tzdata \
-    websockify \
-    x11-utils \
-    x11vnc \
-    xvfb \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app

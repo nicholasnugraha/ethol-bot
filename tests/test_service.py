@@ -118,6 +118,7 @@ class FakeAuth:
 
 def make_settings() -> Settings:
     return Settings(
+        _env_file=None,
         telegram_bot_token="1234567890:fake-token",
         allowed_chat_ids="1",
         encryption_key=Fernet.generate_key().decode(),
@@ -193,6 +194,26 @@ async def test_submit_rejects_stale_key(tmp_path) -> None:
         assert result.sukses is False
         assert "ditutup" in result.pesan.lower()
         assert client.submitted == []
+    finally:
+        await db.close()
+
+
+async def test_durable_claim_survives_service_restart_and_is_user_scoped(tmp_path) -> None:
+    db = Database(str(tmp_path / "claim.db"))
+    await db.connect()
+    try:
+        client = FakeClient()
+        profile = SessionProfile(1, "1", "Owner", ["mahasiswa"])
+        alice = db.for_user(101)
+        session = ActiveSession(kuliah=COURSE_OPTIK.nomor, jenis_schema=4, key="abc123", open=True)
+        assert await alice.claim_submission(f"{COURSE_OPTIK.nomor}:4:abc123")
+        service = EtholService(FakeAuth(client), alice, make_settings(), now_fn=lambda: NOW)
+        result = await service.submit(COURSE_OPTIK, session, profile)
+        assert not result.sukses
+        assert client.submitted == []
+        bob_service = EtholService(FakeAuth(client), db.for_user(202), make_settings(), now_fn=lambda: NOW)
+        assert (await bob_service.submit(COURSE_OPTIK, session, profile)).sukses
+        assert len(client.submitted) == 1
     finally:
         await db.close()
 

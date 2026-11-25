@@ -24,12 +24,15 @@ class DailySummary:
         service: EtholService,
         auth: AuthManager,
         notifier: Notifier,
+        *,
+        recipient_id: int | None = None,
     ) -> None:
         self.settings = settings
         self.db = db
         self.service = service
         self.auth = auth
         self.notifier = notifier
+        self.recipient_id = recipient_id
         self._stop = asyncio.Event()
         self._task: asyncio.Task | None = None
 
@@ -75,16 +78,17 @@ class DailySummary:
         if last_sent == today:
             return
 
-        await self.send_summary()
-        await self.db.set_setting("last_daily_summary", today)
+        delivered = await self.send_summary()
+        if delivered:
+            await self.db.set_setting("last_daily_summary", today)
 
-    async def send_summary(self) -> None:
+    async def send_summary(self) -> bool:
         now = self.service.now_fn()
         try:
             items = await self.service.get_today_schedule()
         except SessionExpired:
             await self.auth.notify_expired()
-            return
+            return False
 
         text = format_today_schedule(items, now)
         refresh_expiry = await self.auth.session_cookie_expiry("refresh_token")
@@ -94,4 +98,5 @@ class DailySummary:
                 "Kirim /login untuk memperbarui lewat noVNC."
             )
 
-        await self.notifier.broadcast(text)
+        await self.notifier.broadcast(text, recipient_id=self.recipient_id)
+        return True

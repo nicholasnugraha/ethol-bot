@@ -16,3 +16,4 @@ class AppContext:
     auth: AuthManager
     service: EtholService
     notifier: Notifier
+    user_id: int | None = None

@@ -145,11 +145,12 @@ async def cmd_help(message: Message, ctx: AppContext) -> None:
 
 @router.message(Command("login"))
 async def cmd_login(message: Message, ctx: AppContext) -> None:
-    ctx.auth.start_login_background()
-    await message.answer(
-        LOGIN_TEXT,
-        reply_markup=login_keyboard(ctx.settings.novnc_public_url),
-    )
+    try:
+        url = await ctx.auth.create_login_url()
+    except Exception as exc:
+        await message.answer(_error_text(exc))
+        return
+    await message.answer(LOGIN_TEXT, reply_markup=login_keyboard(url))
 
 
 @router.message(Command("hariini", "today"))
@@ -157,10 +158,7 @@ async def cmd_today(message: Message, ctx: AppContext) -> None:
     try:
         text, markup = await _today_text(ctx)
     except SessionExpired:
-        await message.answer(
-            "Sesi ETHOL habis. Kirim /login untuk memperbarui.",
-            reply_markup=login_keyboard(ctx.settings.novnc_public_url),
-        )
+        await message.answer("Sesi ETHOL habis. Kirim /login untuk memperbarui.")
         return
     except Exception as exc:
         await message.answer(_error_text(exc))
@@ -323,12 +321,8 @@ async def on_menu(callback: CallbackQuery, ctx: AppContext) -> None:
         elif action == "mode":
             await _edit(callback, await _toggle_mode(ctx), await _menu(ctx))
         elif action == "login":
-            ctx.auth.start_login_background()
-            await _edit(
-                callback,
-                LOGIN_TEXT,
-                login_keyboard(ctx.settings.novnc_public_url),
-            )
+            url = await ctx.auth.create_login_url()
+            await _edit(callback, LOGIN_TEXT, login_keyboard(url))
         elif action == "log":
             logs = await ctx.db.recent_logs(10)
             text = (
@@ -340,11 +334,7 @@ async def on_menu(callback: CallbackQuery, ctx: AppContext) -> None:
             )
             await _edit(callback, text, await _menu(ctx))
     except SessionExpired:
-        await _edit(
-            callback,
-            "Sesi ETHOL habis. Kirim /login untuk memperbarui.",
-            login_keyboard(ctx.settings.novnc_public_url),
-        )
+        await _edit(callback, "Sesi ETHOL habis. Kirim /login untuk memperbarui.")
     except Exception as exc:
         await _edit(callback, _error_text(exc), await _menu(ctx))
     finally:
@@ -368,14 +358,27 @@ async def on_attendance(callback: CallbackQuery, ctx: AppContext) -> None:
             await callback.answer("Aksi tidak dikenal", show_alert=True)
             return
 
+        if ctx.user_id is not None and callback.from_user.id != ctx.user_id:
+            await callback.answer("Tombol ini bukan milik Anda", show_alert=True)
+            return
+
         course = await ctx.service.get_course(kuliah)
-        if course is None:
+        if course is None or course.jenis_schema != jenis_schema:
             await callback.answer("MK tidak ditemukan", show_alert=True)
             return
 
         today = today_str(ctx.service.now_fn(), ctx.settings.timezone)
+        message = callback.message
+        if (message is None or message.date is None
+                or today_str(message.date, ctx.settings.timezone) != today):
+            await callback.answer("Tombol sudah kedaluwarsa", show_alert=True)
+            return
 
         if action in {"i", "s"}:
+            session = await ctx.service.get_active_session(course)
+            if session is None or session.key != key:
+                await callback.answer("Sesi sudah ditutup atau berganti", show_alert=True)
+                return
             status = "izin" if action == "i" else "sakit"
             await ctx.db.set_day_status(today, kuliah, jenis_schema, status)
             await _edit(
@@ -394,7 +397,6 @@ async def on_attendance(callback: CallbackQuery, ctx: AppContext) -> None:
 
         profile = await ctx.auth.get_profile()
         result = await ctx.service.submit(course, session, profile)
-
         icon = "✅" if result.sukses else "⚠️"
         title = "Presensi berhasil" if result.sukses else "Presensi gagal"
         await _edit(

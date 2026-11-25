@@ -85,10 +85,10 @@ class FakeNotifier:
         self.opened = 0
         self.results = 0
 
-    async def session_open(self, course, item, session) -> None:
+    async def session_open(self, course, item, session, *, recipient_id=None) -> None:
         self.opened += 1
 
-    async def attendance_result(self, course, item, result, auto=False) -> None:
+    async def attendance_result(self, course, item, result, auto=False, *, recipient_id=None) -> None:
         self.results += 1
 
 
